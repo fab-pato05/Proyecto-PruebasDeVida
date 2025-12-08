@@ -1,4 +1,4 @@
-// ====================== IMPORTS ======================
+// IMPORTS 
 import express from "express";
 import multer from "multer";
 import path from "path";
@@ -453,9 +453,21 @@ app.post('/verificar-identidad', upload.fields([
     const EXPIRACION_INTENTOS = 86400; // 24h
 
     try {
-        const userId = req.body.user_id;
-        if (!userId) return res.status(400).json({ exito: false, mensaje: "Falta el ID de usuario" });
+        // ----------------------
+        // Validar user_id
+        // ----------------------
+        let userId = req.body.user_id;
+        if (!userId || userId === "null") {
+            return res.status(400).json({ exito: false, mensaje: "ID de usuario inválido o no proporcionado" });
+        }
+        userId = parseInt(userId);
+        if (isNaN(userId)) {
+            return res.status(400).json({ exito: false, mensaje: "ID de usuario debe ser un número válido" });
+        }
 
+        // ----------------------
+        // Control de intentos
+        // ----------------------
         await conectarRedis();
         const key = `INTENTOS:${userId}`;
         let intentos = await redisClient.get(key);
@@ -464,6 +476,9 @@ app.post('/verificar-identidad', upload.fields([
             return res.status(429).json({ exito: false, mensaje: `⚠️ Has alcanzado el máximo de ${MAX_INTENTOS} intentos en 24 horas. Intenta más tarde.` });
         }
 
+        // ----------------------
+        // Obtener info usuario
+        // ----------------------
         const userRes = await pool.query("SELECT id, nombres, apellidos, correo, fechanacimiento FROM usuarios WHERE id = $1", [userId]);
         if (userRes.rows.length > 0) {
             correo_usuario = userRes.rows[0].correo;
@@ -472,6 +487,9 @@ app.post('/verificar-identidad', upload.fields([
             return res.status(404).json({ exito: false, mensaje: "Usuario no encontrado" });
         }
 
+        // ----------------------
+        // Validar archivo doc
+        // ----------------------
         if (!req.files?.doc?.[0]) return res.status(400).json({ exito: false, mensaje: 'Documento no enviado' });
         const docFile = req.files.doc[0];
         const docPath = docFile.path;
@@ -481,13 +499,9 @@ app.post('/verificar-identidad', upload.fields([
         await procesarDocumento(docPath, processedDocPath);
         tmpFilesToRemove.push(processedDocPath);
 
-        try {
-            const docBuffer = fs.readFileSync(docPath);
-            if (KEY) { /* encrypt if key present */ encryptBuffer(docBuffer); }
-        } catch (e) {
-            console.warn('No se pudo encriptar doc:', e);
-        }
-
+        // ----------------------
+        // OCR
+        // ----------------------
         const ocrTextCrudo = (await realizarOCR(processedDocPath)) || "Texto no legible";
         ocrText = limpiarTextoOCR(ocrTextCrudo);
         const identificadorObj = extraerIdentificadorDesdeOCR(ocrText) || null;
@@ -503,6 +517,9 @@ app.post('/verificar-identidad', upload.fields([
             return res.json({ exito: false, mensaje: "El archivo subido no parece un documento oficial (DUI o pasaporte).", tipo_documento: "Foto no válida", vista_previa: `/uploads/${path.basename(docPath)}` });
         }
 
+        // ----------------------
+        // Comparación facial
+        // ----------------------
         const rostroDocBuffer = await extraerRostroDocumento(processedDocPath);
         let encryptedSelfies = null;
 
@@ -540,7 +557,9 @@ app.post('/verificar-identidad', upload.fields([
             }
         }
 
+        // ----------------------
         // Edad
+        // ----------------------
         let edad_valida = 1;
         if (userRes.rows[0].fechanacimiento) {
             const birthDate = new Date(userRes.rows[0].fechanacimiento);
@@ -550,6 +569,9 @@ app.post('/verificar-identidad', upload.fields([
             if (age < 18) edad_valida = 0;
         }
 
+        // ----------------------
+        // Estados
+        // ----------------------
         const livenessStatus = req.body.liveness ? 1 : 0;
         const ocrMatchStatus = identificador !== "DESCONOCIDO" ? 1 : 0;
 
@@ -569,14 +591,18 @@ app.post('/verificar-identidad', upload.fields([
             shapResultado = { error: err.message || "Error al calcular SHAP" };
         }
 
-        // registrar intento
+        // ----------------------
+        // Registrar intento
+        // ----------------------
         const nuevosIntentos = await redisClient.incr(key);
         if (nuevosIntentos === 1) await redisClient.expire(key, EXPIRACION_INTENTOS);
 
-        // guardar verificacion
+        // ----------------------
+        // Guardar verificación
+        // ----------------------
         const resultado_general = rostroCoincide ? "APROBADO" : "RECHAZADO";
         verificationId = await guardarVerificacion({
-            user_id: userId,
+            user_id: userId, // <-- ya es entero seguro
             ocrText,
             similarityScore,
             match_result: rostroCoincide,
@@ -591,7 +617,9 @@ app.post('/verificar-identidad', upload.fields([
             notificado: correo_usuario ? true : false
         });
 
-        // notificaciones
+        // ----------------------
+        // Notificaciones
+        // ----------------------
         if (rostroCoincide && correo_usuario) {
             await enviarCorreoNotificacion(correo_usuario, "Verificación Exitosa", `<p>Hola ${nombre_usuario},</p><p>Tu verificación fue <strong>aprobada</strong>. Similitud: ${similarityScore?.toFixed(2)}%</p>`);
         } else if (!rostroCoincide && correo_usuario) {
@@ -602,6 +630,9 @@ app.post('/verificar-identidad', upload.fields([
             await enviarCorreoNotificacion(process.env.FROM_EMAIL, "Revisión Manual Requerida", `<p>Usuario ${correo_usuario} requiere revisión manual. ID: ${verificationId}</p>`);
         }
 
+        // ----------------------
+        // Respuesta
+        // ----------------------
         return res.json({
             exito: rostroCoincide,
             mensaje: rostroCoincide ? `Verificación exitosa (Similitud: ${similarityScore?.toFixed(2)}%)` : "Rostro no coincide con el documento",
@@ -621,6 +652,7 @@ app.post('/verificar-identidad', upload.fields([
         tmpFilesToRemove.forEach(p => safeUnlink(p));
     }
 });
+
 
 // ERROR HANDLER (global)
 app.use((err, req, res, next) => {

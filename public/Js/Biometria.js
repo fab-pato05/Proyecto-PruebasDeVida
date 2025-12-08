@@ -5,8 +5,8 @@ const canvas = document.getElementById("canvas");
 const captureBtn = document.getElementById("captureBtn");
 const submitBtn = document.getElementById("submitBtn");
 const docInput = document.getElementById("duiFile"); // adaptado al HTML
-const docStatus = document.getElementById("docStatus") || document.getElementById("mensajeUsuario");
-const mensajeUsuario = document.getElementById("mensajeUsuario");
+const docStatus = document.getElementById("statusMsg") || document.getElementById("statusMsg");
+const mensajeUsuario = document.getElementById("statusMsg");
 const selfiePreviewImg = document.getElementById("selfiePreviewImg");
 const selfiePreview = document.getElementById("selfiePreview");
 const docPreviewImg = document.getElementById("duiPreview");
@@ -209,22 +209,90 @@ async function iniciarFlujoVerificacion() {
 }
 
 //  ENVIO 
-async function enviarVerificacion(videoBlob){
+async function enviarVerificacion(videoBlob) {
   try {
-    const file = docInput.files[0]; if(!file){mostrarMensajeUsuario("Documento no encontrado","error"); return;}
+    // Validar documento
+    const file = docInput.files[0];
+    if (!file) {
+      mostrarMensajeUsuario("Documento no encontrado", "error");
+      return;
+    }
+
+    // Validar user_id
+    if (!user_id) {
+      mostrarMensajeUsuario("ID de usuario no definido. Inicia sesión.", "error");
+      return;
+    }
+
+    // Validar videoBlob
+    if (!videoBlob || videoBlob.size === 0) {
+      mostrarMensajeUsuario("No se capturó la selfie correctamente.", "error");
+      return;
+    }
+
+    // Preparar FormData
     const fd = new FormData();
     fd.append("doc", file);
     fd.append("video", videoBlob, `selfie-${Date.now()}.webm`);
     fd.append("acciones", JSON.stringify(accionesRegistro));
-    fd.append("device", JSON.stringify({ userAgent:navigator.userAgent, platform:navigator.platform, language:navigator.language }));
+    fd.append("device", JSON.stringify({
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      language: navigator.language
+    }));
     fd.append("user_id", user_id);
+
+    console.log("Enviando verificación con datos:", {
+      user_id,
+      archivo: file.name,
+      videoBlob: videoBlob.size
+    });
+
     mostrarMensajeUsuario("Enviando verificación...");
-    const resp = await fetch("http://localhost:3000/verificar-identidad",{method:"POST",body:fd});
-    const data = await resp.json();
-    if(data.exito){ mostrarMensajeUsuario("✅ Verificación completada correctamente."); docStatus.textContent = `Resultado: ${data.mensaje || "Éxito"}`; docStatus.className="text-sm text-green-600 mt-1";}
-    else{ mostrarMensajeUsuario("❌ "+(data.mensaje||"Fallo"),"error"); docStatus.textContent=data.mensaje||"Fallo"; docStatus.className="text-sm text-red-600 mt-1"; }
-  } catch(err){ console.error(err); mostrarMensajeUsuario("Error al enviar la verificación","error"); }
+
+    // Enviar solicitud al backend
+    const resp = await fetch("http://localhost:3000/verificar-identidad", { method: "POST", body: fd });
+
+    // Comprobar respuesta HTTP
+    if (!resp.ok) {
+      const errorText = await resp.text();
+      mostrarMensajeUsuario(`Error del servidor: ${resp.status} - ${errorText}`, "error");
+      console.error("Respuesta del servidor:", resp.status, errorText);
+      return;
+    }
+
+    // Leer JSON
+    let data;
+    try {
+      data = await resp.json();
+    } catch (e) {
+      mostrarMensajeUsuario("Respuesta inválida del servidor", "error");
+      console.error("Error parseando JSON:", e);
+      return;
+    }
+
+    // Actualizar UI
+    if (docStatus) {
+      if (data.exito) {
+        mostrarMensajeUsuario("✅ Verificación completada correctamente.");
+        docStatus.textContent = `Resultado: ${data.mensaje || "Éxito"}`;
+        docStatus.className = "text-sm text-green-600 mt-1";
+      } else {
+        mostrarMensajeUsuario("❌ " + (data.mensaje || "Fallo"), "error");
+        docStatus.textContent = data.mensaje || "Fallo";
+        docStatus.className = "text-sm text-red-600 mt-1";
+      }
+    } else {
+      console.warn("No se encontró el elemento docStatus en el DOM");
+      mostrarMensajeUsuario(data.mensaje || "Fallo", "error");
+    }
+
+  } catch (err) {
+    console.error("Error en enviarVerificacion:", err);
+    mostrarMensajeUsuario("Error al enviar la verificación", "error");
+  }
 }
+
 
 //  BOTON SUBMIT
 submitBtn.addEventListener("click", async e=>{
