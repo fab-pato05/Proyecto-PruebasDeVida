@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tutorial — Panel Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" href="../img/LOGO_CS.jpg" type="image/jpeg">
+  <style>
+    /* reglas responsive compartidas */
+    @media (max-width:639px){
+      #sidebar{position:fixed; left:0; top:0; height:100%; transform:translateX(-100%); transition:transform .25s ease; z-index:40; width:18rem}
+      body.mobile-open #sidebar{transform:translateX(0)}
+      #mobile-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:30}
+      body.mobile-open #mobile-overlay{display:block}
+      main{padding:1rem}
+      .responsive-table{overflow-x:auto}
+      .full-mobile{width:100%}
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans text-gray-800">
+  <div class="flex">
+    <aside class="w-64 bg-sky-800 text-white p-6" id="sidebar">
+      <div class="flex items-center gap-3 mb-6">
+        <img src="../img/LOGO_CS.jpg" class="w-10 h-10 rounded-full" alt="logo">
+        
+    </aside>
+
+    <main class="flex-1 p-8">
+      <header class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold">Guía rápida para empresas — Panel de Administración</h1>
+        <a href="configuracion.html" class="bg-blue-600 text-white px-4 py-2 rounded">Volver a Configuración</a>
+      </header>
+
+      <div class="max-w-4xl mx-auto space-y-4">
+        <section class="bg-white p-6 rounded shadow">
+          <h2 class="font-semibold">¿Qué es Circulo Seguro?</h2>
+          <p class="mt-2 text-sm">Circulo Seguro proporciona una plataforma para gestionar verificaciones realizadas por su organización (identidad, documentos, etc.). El Panel de Administración ofrece una vista centralizada de todas las solicitudes de verificación, herramientas de búsqueda y filtrado, métricas de rendimiento y opciones para exportar o programar reportes.</p>
+        </section>
+
+        <section class="bg-white p-6 rounded shadow">
+          <h2 class="font-semibold">Flujo básico</h2>
+          <ol class="mt-2 list-decimal list-inside text-sm space-y-1">
+            <li>Un usuario envía una solicitud con su documento para verificar.</li>
+            <li>La solicitud aparece en <strong>Solicitudes</strong> en el Panel de Administración.</li>
+            <li>El operador revisa la solicitud y puede <em>Aprobar</em> o <em>Rechazar</em>.</li>
+            <li>Si la verificación biométrica detecta al menos el 90% de parecido con su respectivo documento no es necesario aceptar la solicitud.</li>
+            <li>Los resultados se registran y pueden verse en <strong>Resultados</strong>.</li>
+            <li>Genere reportes desde <strong>Reportes</strong> para analizar métricas (tasa de éxito, fallos, tiempos).</li>
+          </ol>
+        </section>
+
+        <section class="bg-white p-6 rounded shadow">
+          <h2 class="font-semibold">Cómo usar cada sección</h2>
+          <div class="mt-2 space-y-3 text-sm">
+            <div>
+              <strong>Resumen / Dashboard</strong>
+              <p class="text-xs mt-1">Muestra KPIs: tasa de éxito, intentos fallidos y tiempo promedio de procesamiento. Útil para revisar salud operativa a primera vista.</p>
+            </div>
+            <div>
+              <strong>Solicitudes</strong>
+              <p class="text-xs mt-1">Aquí verá la lista de solicitudes. Use el buscador por nombre para localizar rápidamente un usuario. En cada fila puede <em>Aprobar</em> o <em>Rechazar</em> la solicitud.</p>
+            </div>
+            <div>
+              <strong>Resultados</strong>
+              <p class="text-xs mt-1">Contiene los informes de verificación y métricas técnicas asociadas a cada resultado.</p>
+            </div>
+            <div>
+              <strong>Reportes</strong>
+              <p class="text-xs mt-1">Genere reportes por rango de fechas y tipo. Puede descargar en PDF o Excel y programar entregas.</p>
+            </div>
+            <div>
+              <strong>Configuración</strong>
+              <p class="text-xs mt-1">Ajuste notificaciones, canales y opciones de soporte. Desde aquí también puede enviar sugerencias o reportes y acceder al centro de ayuda.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="bg-white p-6 rounded shadow">
+          <h2 class="font-semibold">Métricas clave y qué significan</h2>
+          <ul class="mt-2 list-disc list-inside text-sm space-y-1">
+            <li><strong>Tasa de éxito</strong>: porcentaje de verificaciones aprobadas respecto al total.</li>
+            <li><strong>Intentos fallidos</strong>: número de verificaciones rechazadas o con error.</li>
+            <li><strong>Tiempo promedio</strong>: tiempo medio de procesamiento por verificación (segundos o minutos).</li>
+          </ul>
+        </section>
+
+        <section class="bg-white p-6 rounded shadow">
+          <h2 class="font-semibold">Buenas prácticas</h2>
+          <ul class="mt-2 list-disc list-inside text-sm space-y-1">
+            <li>Revise el menú de Resumen al inicio del día para detectar picos o problemas.</li>
+            <li>Use búsquedas por nombre o ID para encontrar rápidamente solicitudes en revisión.</li>
+            <li>Programe reportes semanales para auditoría y seguimiento de SLA.</li>
+            <li>Active notificaciones si desea recibir alertas sobre información o nuevas solicitudes.</li>
+          </ul>
+        </section>
+        <section class="bg-white p-6 rounded shadow">
+  <h2 class="font-semibold">Preguntas frecuentes (FAQ)</h2>
+  <ul class="mt-2 list-disc list-inside text-sm space-y-1">
+    <li>¿Cómo puedo recuperar mi contraseña?</li>
+    <li> Si es administrador y perdio su contraseña contacte a soporte para recuperarla</li>
+    <li>¿Dónde puedo descargar mis reportes generados?</li>
+    <li> En la seccion de reportes, seleccione el reporte que desea descargar y haga clic en el boton de descargar.</li>
+    <li>¿Cómo se calculan las métricas de éxito?</li>
+    <li> Junto con los datos que hemos recolectado gracias a nuestros usuarios.</li>
+    <li>¿Qué hago si un usuario aparece duplicado?</li>
+    <li> No se confunda, pueden tener el mismo nombre de usuario pero los diferencia su informacion proporcionada y el ID</li>
+    <li>¿Puedo tener varios administradores en la misma cuenta?</li>
+    <li> Si, puede agregar varios administradores desde la seccion de configuracion (2 cupos limitados por empresa)</li>
+  </ul>
+</section>
+
+
+        <section class="bg-white p-6 rounded shadow">
+          <h2 class="font-semibold">Soporte y contacto</h2>
+          <p class="text-sm mt-2">Si su empresa necesita soporte personalizado, utilice la sección <em>Asistencia y soporte</em> en Configuración, o contacte por WhatsApp o llamada al <a href="https://wa.me/50368270392" class="text-blue-600">68270392</a>.</p>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- overlay + script -->
+<div id="mobile-overlay" aria-hidden="true"></div>
+<script>
+  (function(){
+    function applyState(){ if(localStorage.getItem('sidebarCollapsed')==='1') document.body.classList.add('sidebar-collapsed'); else document.body.classList.remove('sidebar-collapsed'); }
+    applyState();
+    const overlay=document.getElementById('mobile-overlay'); if(overlay) overlay.addEventListener('click',()=>{ document.body.classList.remove('mobile-open'); document.body.style.overflow=''; });
+    let startX=0, startY=0, active=false; const EDGE_ZONE=30, OPEN_THRESHOLD=60, CLOSE_THRESHOLD=-60;
+    function onStart(e){ const t=(e.touches&&e.touches[0])||e; startX=t.clientX; startY=t.clientY; active=(startX<=EDGE_ZONE)||document.body.classList.contains('mobile-open'); }
+    function onMove(e){ if(!active) return; const t=(e.touches&&e.touches[0])||e; const dx=t.clientX-startX, dy=t.clientY-startY; if(Math.abs(dy)>50){ active=false; return; } }
+    function onEnd(e){ if(!active) return; const t=(e.changedTouches&&e.changedTouches[0])||e; const dx=t.clientX-startX; if(!document.body.classList.contains('mobile-open') && dx>OPEN_THRESHOLD){ document.body.classList.add('mobile-open'); document.body.style.overflow='hidden'; } else if(document.body.classList.contains('mobile-open') && dx<CLOSE_THRESHOLD){ document.body.classList.remove('mobile-open'); document.body.style.overflow=''; } active=false; }
+    document.addEventListener('touchstart', onStart, {passive:true}); document.addEventListener('touchmove', onMove, {passive:true}); document.addEventListener('touchend', onEnd, {passive:true});
+    let mdown=false; document.addEventListener('mousedown',(e)=>{ startX=e.clientX; startY=e.clientY; mdown=(startX<=EDGE_ZONE)||document.body.classList.contains('mobile-open'); });
+    document.addEventListener('mousemove',(e)=>{ if(!mdown) return; const dx=e.clientX-startX; if(document.body.classList.contains('mobile-open')) return; if(dx>OPEN_THRESHOLD){ document.body.classList.add('mobile-open'); document.body.style.overflow='hidden'; mdown=false; } });
+    document.addEventListener('mouseup',()=>{ mdown=false; });
+  })();
+</script>
+
+  <script>
+    // asegurar sidebar visible
+    (function(){ try{ document.getElementById('sidebar').style.display=''; }catch(e){} })();
+  </script>
+</body>
+</html>
