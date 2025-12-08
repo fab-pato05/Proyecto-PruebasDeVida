@@ -259,6 +259,7 @@ async function enviarVerificacion(videoBlob) {
       mostrarMensajeUsuario(`Error del servidor: ${resp.status} - ${errorText}`, "error");
       console.error("Respuesta del servidor:", resp.status, errorText);
       return;
+      
     }
 
     // Leer JSON
@@ -277,6 +278,23 @@ async function enviarVerificacion(videoBlob) {
         mostrarMensajeUsuario("✅ Verificación completada correctamente.");
         docStatus.textContent = `Resultado: ${data.mensaje || "Éxito"}`;
         docStatus.className = "text-sm text-green-600 mt-1";
+        if (data.exito) {
+    mostrarMensajeUsuario("✅ Verificación completada correctamente.");
+    if (docStatus) {
+        docStatus.textContent = `Resultado: ${data.mensaje || "Éxito"}`;
+        docStatus.className = "text-sm text-green-600 mt-1";
+    }
+    // Redirigir a otra página después de 2 segundos
+    setTimeout(() => {
+        window.location.href = "/Prueba_panel_usuarios"; // Cambia la ruta a la página deseada
+    }, 2000);
+} else {
+    mostrarMensajeUsuario("❌ " + (data.mensaje || "Fallo"), "error");
+    if (docStatus) {
+        docStatus.textContent = data.mensaje || "Fallo";
+        docStatus.className = "text-sm text-red-600 mt-1";
+    }
+}
       } else {
         mostrarMensajeUsuario("❌ " + (data.mensaje || "Fallo"), "error");
         docStatus.textContent = data.mensaje || "Fallo";
