@@ -36,7 +36,7 @@ form.addEventListener('submit', (e) => {
     mensaje.textContent = 'Datos guardados temporalmente. Redirigiendo a verificación biométrica...';
 
     setTimeout(() => {
-        window.location.href = "/Views/Biometria.html"
+        window.location.href = "/Biometria.html"
     }, 1000);
 });
 
