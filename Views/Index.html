@@ -225,6 +225,28 @@
 
   <!-- Scripts -->
   <script type="module" src="/public/Js/index.js"></script>
-  <script>document.getElementById('year').textContent=new Date().getFullYear();</script>
+  
+  <!-- Script común: toggles móviles, feather icons y año dinámico (mejorado) -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const btns = document.querySelectorAll('.mobile-toggle-btn');
+      const globalMenu = document.getElementById('mobile-menu');
+      btns.forEach(btn => {
+        btn.setAttribute('aria-expanded', 'false');
+        btn.addEventListener('click', () => {
+          // intenta selector data-target, luego buscar dentro del nav, luego global
+          const target = btn.getAttribute('data-target');
+          let menu = target ? document.querySelector(target) : null;
+          if (!menu) menu = btn.closest('nav')?.querySelector('#mobile-menu') || globalMenu || btn.nextElementSibling;
+          if (!menu) { console.warn('Menú móvil no encontrado para el botón', btn); return; }
+          menu.classList.toggle('hidden');
+          const expanded = menu.classList.contains('hidden') ? 'false' : 'true';
+          btn.setAttribute('aria-expanded', expanded);
+        });
+      });
+      if (window.feather) try { feather.replace(); } catch (e) {}
+      const yearEl = document.getElementById('year'); if (yearEl) yearEl.textContent = new Date().getFullYear();
+    });
+  </script>
 </body>
 </html>

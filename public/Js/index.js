@@ -19,13 +19,4 @@ document.addEventListener('DOMContentLoaded', function() {
       btn.addEventListener('click', e => e.preventDefault());
     }
   })();
-
-  // Toggle menú móvil
-  (function() {
-    const btn = document.querySelector('.mobile-toggle-btn');
-    const menu = document.getElementById('mobile-menu');
-    if (btn && menu) {
-      btn.addEventListener('click', () => menu.classList.toggle('hidden'));
-    }
-  })();
 });

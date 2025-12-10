@@ -23,7 +23,7 @@
             </a>
           </div>
 
-          <button class="md:hidden text-gray-700 focus:outline-none mobile-toggle-btn">
+          <button id="mobile-toggle-btn" class="md:hidden text-gray-700 focus:outline-none mobile-toggle-btn" aria-controls="mobile-menu" aria-expanded="false" data-target="#mobile-menu" type="button">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
@@ -38,6 +38,16 @@
         </div>
       </nav>
     </header>
+
+    <!-- Menú móvil (visualmente igual que el navbar pero para pantallas pequeñas) -->
+    <div id="mobile-menu" class="md:hidden hidden bg-white border-t">
+      <ul class="flex flex-col px-4 py-2 space-y-2">
+        <li><a href="Contacto.html" class="block py-2">Contacto</a></li>
+        <li><a href="Privacidad.html" class="block py-2">Privacidad</a></li>
+        <li><a href="Terminos.html" class="block py-2">Términos y Condiciones</a></li>
+        <li><a href="Index.html" class="block py-2 text-blue-600">Volver al inicio</a></li>
+      </ul>
+    </div>
 
     <!-- Contenido -->
     <main class="max-w-4xl mx-auto px-6 py-10 bg-white shadow-lg rounded-xl mt-8">
@@ -130,5 +140,49 @@
             <a href="Terminos.html" class="text-blue-600 hover:underline">Términos</a>
         </p>
     </footer>
+
+  <!-- Script para el menú móvil -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function(){
+      const btn = document.getElementById('mobile-toggle-btn');
+      const menu = document.getElementById('mobile-menu');
+      if(!btn || !menu) return;
+
+      // Inicializar aria
+      btn.setAttribute('aria-expanded', String(!menu.classList.contains('hidden')));
+
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        menu.classList.toggle('hidden');
+        const expanded = (!menu.classList.contains('hidden')) ? 'true' : 'false';
+        btn.setAttribute('aria-expanded', expanded);
+      });
+
+      // Cerrar al hacer clic fuera
+      document.addEventListener('click', function(e){
+        if(menu.classList.contains('hidden')) return;
+        if(!menu.contains(e.target) && !btn.contains(e.target)){
+          menu.classList.add('hidden');
+          btn.setAttribute('aria-expanded','false');
+        }
+      });
+
+      // Cerrar con Escape
+      document.addEventListener('keydown', function(e){
+        if(e.key === 'Escape' && !menu.classList.contains('hidden')){
+          menu.classList.add('hidden');
+          btn.setAttribute('aria-expanded','false');
+        }
+      });
+
+      // Asegurar visibilidad correcta al cambiar tamaño
+      window.addEventListener('resize', function(){
+        if(window.innerWidth >= 768 && !menu.classList.contains('hidden')){
+          menu.classList.add('hidden');
+          btn.setAttribute('aria-expanded','false');
+        }
+      });
+    });
+  </script>
 </body>
 </html>
