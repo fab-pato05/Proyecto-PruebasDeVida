@@ -31,6 +31,11 @@ const PORT = Number(process.env.PORT || 3000);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(process.cwd(), "Views")));
+// 📌 Carpeta PUBLIC (si la tienes)
+app.use(express.static(path.join(process.cwd(), "public")));
+
+// 📌 SERVIR la carpeta Views correctamente
+app.use('/Views', express.static(path.join(process.cwd(), "Views")));
 
 app.use(cors({
     origin: "*",

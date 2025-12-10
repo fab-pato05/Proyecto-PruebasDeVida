@@ -205,6 +205,11 @@
                 🔄 Iniciar Nueva Verificación
             </button>
         </div>
+        <script>
+    document.getElementById("submitBtn").addEventListener("click", function () {
+        window.location.href = "cotizador.html"; 
+    });
+</script>
 
         <!-- Estado / Mensaje -->
         <p id="statusMsg" class="mt-4 text-center text-sm text-gray-600 italic"></p>
@@ -251,6 +256,6 @@
 
         window.addEventListener("load", mostrarIndicaciones);
     </script>
-</body>
+  </body>
 
 </html>
