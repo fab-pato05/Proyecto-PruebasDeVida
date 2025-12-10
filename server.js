@@ -72,7 +72,7 @@ app.set('trust proxy', 1);
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
 
 // STATIC FOLDERS 
-ap.use("/Js", express.static(path.join(process.cwd(), "public/Js")));
+app.use("/Js", express.static(path.join(process.cwd(), "public/Js")));
 app.use("/img", express.static(path.join(process.cwd(), "public/img")));
 app.use("/css", express.static(path.join(process.cwd(), "public/css")));
 app.use("/models", express.static(path.join(process.cwd(), "models")));
