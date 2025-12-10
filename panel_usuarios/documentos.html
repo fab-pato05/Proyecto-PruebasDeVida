@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Panel - Documentos</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="icon" href="img/LOGO_CS.jpg" type="image/jpeg" sizes="32x32">
+  <link rel="icon" href="/public/img/LOGO_CS.jpg" type="image/jpeg" sizes="32x32">
 </head>
 <body class="bg-gray-100 min-h-screen flex">
 
@@ -48,6 +48,32 @@
     </div>
   </main>
 <div id="mobile-overlay"></div>
+
+  <style>
+    /* Off-canvas sidebar para móvil: oculto por defecto y visible solo con body.mobile-open */
+    @media (max-width: 767px){
+      #sidebar{
+        position:fixed;
+        left:0; top:0;
+        height:100%;
+        transform:translateX(-100%);
+        transition:transform .25s ease, visibility .25s ease;
+        z-index:40;
+        width:16rem;
+        visibility:hidden;
+        pointer-events:none;
+      }
+      body.mobile-open #sidebar{
+        transform:translateX(0);
+        visibility:visible;
+        pointer-events:auto;
+      }
+      #mobile-overlay{display:none}
+      body.mobile-open #mobile-overlay{display:block; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:30}
+      main{padding:1rem}
+    }
+  </style>
+
 <script>
   (function(){
     const overlay=document.getElementById('mobile-overlay');
@@ -58,9 +84,7 @@
     function onMove(e){ if(!active) return; const t=(e.touches&&e.touches[0])||e; const dx=t.clientX-startX, dy=t.clientY-startY; if(Math.abs(dy)>50){ active=false; return; } }
     function onEnd(e){ if(!active) return; const t=(e.changedTouches&&e.changedTouches[0])||e; const dx=t.clientX-startX; if(!document.body.classList.contains('mobile-open') && dx>OPEN_THRESHOLD){ document.body.classList.add('mobile-open'); document.body.style.overflow='hidden'; } else if(document.body.classList.contains('mobile-open') && dx<CLOSE_THRESHOLD){ document.body.classList.remove('mobile-open'); document.body.style.overflow=''; } active=false; }
 
-    document.addEventListener('touchstart', onStart, {passive:true});
-    document.addEventListener('touchmove', onMove, {passive:true});
-    document.addEventListener('touchend', onEnd, {passive:true});
+    document.addEventListener('touchstart', onStart, {passive:true}); document.addEventListener('touchmove', onMove, {passive:true}); document.addEventListener('touchend', onEnd, {passive:true});
 
     // mouse support for testing on desktop
     let mdown=false; document.addEventListener('mousedown',(e)=>{ startX=e.clientX; startY=e.clientY; mdown=(startX<=EDGE_ZONE)||document.body.classList.contains('mobile-open'); });
@@ -68,6 +92,5 @@
     document.addEventListener('mouseup',()=>{ mdown=false; });
   })();
 </script>
-<script src="js/poliza.js" defer></script>
 </body>
 </html>

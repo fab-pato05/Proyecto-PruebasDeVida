@@ -1,11 +1,7 @@
 (function(){
-  // Crea e inyecta un formulario para administradores dentro de un contenedor existente
   function renderAdminForm(containerId = 'admin-form-container') {
     const container = document.getElementById(containerId);
-    if (!container) {
-      // Si no existe el contenedor, nada que hacer
-      return;
-    }
+    if (!container) return;
 
     container.innerHTML = `
       <div class="admin-form-wrapper">
@@ -50,6 +46,7 @@
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
+
       const data = {
         id: document.getElementById('admin-id').value || null,
         nombre: document.getElementById('admin-nombre').value.trim(),
@@ -58,15 +55,12 @@
         rol: document.getElementById('admin-rol').value,
       };
 
-      // Emite un evento custom con la información del formulario para que el backend lo maneje externamente
       const event = new CustomEvent('adminFormSubmit', { detail: data });
       window.dispatchEvent(event);
 
-      // Mensaje de feedback (solo UI)
       msg.textContent = 'Formulario preparado. Procesa los datos en el backend.';
       msg.style.display = 'inline';
 
-      // Limpiar contraseña por seguridad
       document.getElementById('admin-contrasena').value = '';
 
       setTimeout(() => { msg.style.display = 'none'; }, 3000);
@@ -78,32 +72,21 @@
     });
   }
 
-  // Permite cargar datos en el formulario (por ejemplo para editar)
   function loadAdminToForm(admin) {
     if (!admin) return;
-    const idEl = document.getElementById('admin-id');
-    const nombreEl = document.getElementById('admin-nombre');
-    const correoEl = document.getElementById('admin-correo');
-    const rolEl = document.getElementById('admin-rol');
-    if (!nombreEl) return; // formulario no renderizado
+    if (!document.getElementById('admin-nombre')) return;
 
-    idEl.value = admin.id || '';
-    nombreEl.value = admin.nombre || '';
-    correoEl.value = admin.correo || '';
-    rolEl.value = admin.rol || 'admin';
-    // No cargamos la contraseña por seguridad
+    document.getElementById('admin-id').value = admin.id || '';
+    document.getElementById('admin-nombre').value = admin.nombre || '';
+    document.getElementById('admin-correo').value = admin.correo || '';
+    document.getElementById('admin-rol').value = admin.rol || 'admin';
   }
 
-  // Inicializa el módulo (renderiza el formulario y devuelve helpers)
   function init(containerId) {
     renderAdminForm(containerId);
-    return {
-      load: loadAdminToForm,
-    };
+    return { load: loadAdminToForm };
   }
 
-  // Exponer en el namespace global para uso desde HTML
   window.AdminForm = { init, loadAdminToForm };
-window.location.replace("/Views/panel_admin/admin.html");
 
 })();
