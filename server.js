@@ -17,7 +17,11 @@ import nodemailer from "nodemailer";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
-import { RekognitionClient, CompareFacesCommand } from "@aws-sdk/client-rekognition";
+import {
+    RekognitionClient,
+    CompareFacesCommand,
+    DetectFacesCommand
+} from "@aws-sdk/client-rekognition";
 import { createWorker } from "tesseract.js";
 
 const { Pool } = pkg;
@@ -37,13 +41,30 @@ app.use(cors({
     allowedHeaders: ["Content-Type"]
 }));
 
+// CONFIGURACIÓN OCR (Tesseract)
+let ocrWorker = null;
+//  inicializarlo al iniciar el servidor
+async function initOcrWorker() {
+    console.log("Iniciando Worker de Tesseract...");
+    ocrWorker = createWorker();
+    try {
+        await ocrWorker.load();
+        await ocrWorker.loadLanguage("spa");
+        await ocrWorker.initialize("spa");
+        console.log("✅ Tesseract OCR Worker listo.");
+    } catch (err) {
+        console.error("❌ Error inicializando Tesseract OCR:", err);
+        ocrWorker = null; // Marcar como fallido
+    }
+}
+
 // SECURITY MIDDLEWARES 
 app.use(helmet({
     contentSecurityPolicy: {
         useDefaults: true,
         directives: {
             "script-src": ["'self'", "https://cdn.tailwindcss.com", "https://unpkg.com"],
-            "style-src": ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+            "style-src": ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://unpkg.com"],
             "img-src": ["'self'", "data:", "blob:"]
         }
     }
@@ -182,6 +203,37 @@ function authenticateJWT(req, res, next) {
         next();
     });
 }
+//  Helper 
+async function extractFrames(videoPath, count = 3) {
+    // Extrae frames en porcentajes (10%, 50%, 90% por defecto) usando ffmpeg.screenshots
+    return new Promise((resolve, reject) => {
+        try {
+            const dir = path.dirname(videoPath);
+            const timestamps = ['10%', '50%', '90%'].slice(0, count);
+            const outFiles = [];
+            let finished = 0;
+            // ffmpeg.screenshots acepta múltiples timestamps, pero la API en distintos entornos puede variar,
+            // por eso lanzamos una llamada por cada timestamp para mayor compatibilidad.
+            timestamps.forEach((ts, i) => {
+                const out = path.join(dir, `${uuidv4()}.png`);
+                ffmpeg(videoPath)
+                    .screenshots({ timestamps: [ts], filename: path.basename(out), folder: dir })
+                    .on('end', () => {
+                        outFiles[i] = out;
+                        finished++;
+                        if (finished === timestamps.length) resolve(outFiles);
+                    })
+                    .on('error', (err) => {
+                        // cleanup parcial
+                        outFiles.forEach(f => { try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) { } });
+                        reject(err);
+                    });
+            });
+        } catch (err) {
+            reject(err);
+        }
+    });
+}
 
 // FUNCIONES DE IMAGEN / VIDEO
 async function procesarDocumento(entrada, salida) {
@@ -217,12 +269,55 @@ async function extraerFrameVideo(videoPath) {
             .on('error', err => { safeUnlink(tempPng); reject(err); });
     });
 }
-
+async function bufferFromImage(filePath, size = 160) {
+    const buf = await sharp(filePath).resize(size, size).greyscale().raw().toBuffer();
+    return { buf, info: { size } };
+}
+function meanAbsoluteDiff(bufA, bufB) {
+    if (!bufA || !bufB || bufA.length !== bufB.length) return 0;
+    let s = 0; for (let i = 0; i < bufA.length; i++) s += Math.abs(bufA[i] - bufB[i]);
+    return s / bufA.length;
+}
+// simple passive liveness: compara dierencias 
+async function evaluarLiveness(videoPath) {
+    try {
+        const frames = await extractFrames(videoPath, 3);
+        const imgs = [];
+        for (const f of frames) imgs.push(await bufferFromImage(f, 160));
+        // compare consecutive
+        const d1 = meanAbsoluteDiff(imgs[0].buf, imgs[1].buf);
+        const d2 = meanAbsoluteDiff(imgs[1].buf, imgs[2].buf);
+        // cleanup temporary frames
+        frames.forEach(f => safeUnlink(f));
+        // normalize by heuristic
+        const avg = (d1 + d2) / 2;
+        // threshold must be tuned, default 10
+        const threshold = Number(process.env.LIVENESS_DIFF_THRESHOLD || 8);
+        return { score: avg, live: avg >= threshold };
+    } catch (err) { console.warn('evaluarLiveness error', err.message); return { score: 0, live: false }; }
+}
 // FUNCIONES BD 
 async function guardarVerificacion({ user_id = null, ocrText = null, similarityScore = null, match_result = false, liveness = false, edad_valida = null, documento_path = null, selfie_paths = null, ip = null, dispositivo = null, acciones = null, resultado_general = null, notificado = false }) {
     const q = `INSERT INTO verificacion_biometrica (user_id, dui_text, score, match_result, liveness, edad_valida, documento_path, selfie_paths, ip_usuario, dispositivo, acciones, resultado_general, notificado, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now()) RETURNING id;`;
     const vals = [user_id, ocrText, similarityScore, match_result, liveness, edad_valida, documento_path, selfie_paths ? JSON.stringify(selfie_paths) : null, ip, dispositivo ? JSON.stringify(dispositivo) : null, acciones ? JSON.stringify(acciones) : null, resultado_general, notificado];
     try { const r = await pool.query(q, vals); return r.rows[0].id; } catch (err) { console.error("Error guardando verificacion:", err); return null; }
+}
+// ===== INTEGRACIÓN PYTHON (SHAP) =====
+async function obtenerSHAP(datosVerificacion) {
+    return new Promise((resolve, reject) => {
+        const pythonProcess = spawn('python', ['shap_verificacion.py', JSON.stringify(datosVerificacion)]);
+        let output = '', errorOutput = '';
+        pythonProcess.stdout.on('data', data => output += data.toString());
+        pythonProcess.stderr.on('data', data => errorOutput += data.toString());
+        pythonProcess.on('close', code => {
+            if (code !== 0 || errorOutput) return reject(new Error(errorOutput || 'Python SHAP error'));
+            try {
+                resolve(JSON.parse(output));
+            } catch (err) {
+                reject(new Error('Respuesta de Python inválida: ' + output));
+            }
+        });
+    });
 }
 
 //  ENDPOINTS PRINCIPALES 
@@ -242,7 +337,7 @@ app.post("/guardar-referencia", async (req, res) => {
         return res.status(500).json({ ok: false, mensaje: "Error al guardar referencia" });
     }
 });
-
+//ANALIZAR LA IMAGEN 
 app.post("/analizar", upload.single("imagen"), async (req, res) => {
     const tmpFile = req.file?.path;
     try {
@@ -298,6 +393,7 @@ app.post('/guardar-registerForm', async (req, res) => {
         res.status(500).json({ ok: false, message: "Error al registrar usuario" });
     }
 });
+//GUARDAR BIOMETRIA
 app.post('/guardar-biometria', uploadBiometria.fields([
     { name: 'selfie', maxCount: 1 },
     { name: 'dui', maxCount: 1 }
@@ -321,7 +417,7 @@ app.post('/guardar-biometria', uploadBiometria.fields([
             user_id,
             documento_path: duiPath,
             selfie_paths: [selfiePath],
-            match_result: true // si agregas comparación facial, reemplaza aquí
+            match_result: true
         });
 
         res.json({ ok: true, mensaje: "Biometría guardada correctamente", verifId, selfiePath, duiPath });
@@ -353,33 +449,6 @@ app.post('/login', async (req, res) => {
     }
 });
 
-// GUARDAR BIOMETRIA sencillo
-app.post('/guardar-biometria', uploadBiometria.fields([
-    { name: 'selfie', maxCount: 1 },
-    { name: 'dui', maxCount: 1 }
-]), async (req, res) => {
-    try {
-        const user_id = Number(req.body.user_id);
-        if (!user_id || isNaN(user_id)) return res.status(400).json({ ok: false, mensaje: "Falta user_id válido" });
-        if (!req.files || !req.files['selfie'] || !req.files['dui']) {
-            return res.status(400).json({ ok: false, mensaje: "Debes subir selfie y DUI" });
-        }
-        const selfieFile = req.files['selfie'][0];
-        const duiFile = req.files['dui'][0];
-        const selfiePath = `/uploads/biometria/${selfieFile.filename}`;
-        const duiPath = `/uploads/biometria/${duiFile.filename}`;
-        const verifId = await guardarVerificacion({
-            user_id,
-            documento_path: duiPath,
-            selfie_paths: [selfiePath],
-            match_result: true
-        });
-        res.json({ ok: true, mensaje: "Biometría guardada correctamente", verifId, selfiePath, duiPath });
-    } catch (err) {
-        console.error("Error guardando biometría:", err);
-        res.status(500).json({ ok: false, mensaje: "Error al guardar imágenes" });
-    }
-});
 // Guardar cotización
 app.post('/guardar-cotizacionForm', async (req, res) => {
     try {
@@ -436,223 +505,218 @@ app.post('/guardar-contratacion', async (req, res) => {
 
 // Lógica de Verificación de Identidad 
 // VERIFICAR IDENTIDAD 
-app.post('/verificar-identidad', upload.fields([
-    { name: 'doc', maxCount: 1 },
-    { name: 'video', maxCount: 1 }
-]), async (req, res) => {
+app.post('/verificar-identidad',
+    upload.fields([
+        { name: 'doc', maxCount: 1 },
+        { name: 'video', maxCount: 1 }
+]), 
+async (req, res) => {
     const tmpFilesToRemove = [];
-    let tipoDocumentoDetectado = "DESCONOCIDO";
-    let rostroCoincide = false;
-    let similarityScore = null;
-    let correo_usuario = null;
-    let nombre_usuario = null;
-    let verificationId = null;
-    let ocrText = "Texto no legible";
-
     const MAX_INTENTOS = 5;
     const EXPIRACION_INTENTOS = 86400; // 24h
-
+    
     try {
-        // ----------------------
-        // Validar user_id
-        // ----------------------
+        //Validar user_id
         let userId = req.body.user_id;
-        if (!userId || userId === "null") {
-            return res.status(400).json({ exito: false, mensaje: "ID de usuario inválido o no proporcionado" });
-        }
+        if (!userId || userId === "null") return res.status(400).json({ exito: false, mensaje: "ID de usuario inválido o no proporcionado" });
         userId = parseInt(userId);
-        if (isNaN(userId)) {
-            return res.status(400).json({ exito: false, mensaje: "ID de usuario debe ser un número válido" });
-        }
+        if (isNaN(userId)) return res.status(400).json({ exito: false, mensaje: "ID de usuario debe ser un número válido" });
 
-        // ----------------------
-        // Control de intentos
-        // ----------------------
+        // Conectar Redis y controlar intentos
         await conectarRedis();
         const key = `INTENTOS:${userId}`;
-        let intentos = await redisClient.get(key);
-        intentos = intentos ? parseInt(intentos) : 0;
-        if (intentos >= MAX_INTENTOS) {
-            return res.status(429).json({ exito: false, mensaje: `⚠️ Has alcanzado el máximo de ${MAX_INTENTOS} intentos en 24 horas. Intenta más tarde.` });
-        }
+        let intentos = 0;
+        try { intentos = Number(await redisClient.get(key) || 0); } catch (e) { console.warn("Redis get error:", e.message); intentos = 0; }
+        if (intentos >= MAX_INTENTOS) return res.status(429).json({ exito: false, mensaje: `⚠️ Has alcanzado el máximo de ${MAX_INTENTOS} intentos en 24 horas.` });
 
-        // ----------------------
-        // Obtener info usuario
-        // ----------------------
+        //Obtener info usuario
         const userRes = await pool.query("SELECT id, nombres, apellidos, correo, fechanacimiento FROM usuarios WHERE id = $1", [userId]);
-        if (userRes.rows.length > 0) {
-            correo_usuario = userRes.rows[0].correo;
-            nombre_usuario = `${userRes.rows[0].nombres || ''} ${userRes.rows[0].apellidos || ''}`.trim();
-        } else {
-            return res.status(404).json({ exito: false, mensaje: "Usuario no encontrado" });
-        }
+        if (userRes.rows.length === 0) return res.status(404).json({ exito: false, mensaje: "Usuario no encontrado" });
+        const usuario = userRes.rows[0];
+        const correo_usuario = usuario.correo || null;
+        const nombre_usuario = `${usuario.nombres || ''} ${usuario.apellidos || ''}`.trim();
 
-        // ----------------------
         // Validar archivo doc
-        // ----------------------
         if (!req.files?.doc?.[0]) return res.status(400).json({ exito: false, mensaje: 'Documento no enviado' });
         const docFile = req.files.doc[0];
         const docPath = docFile.path;
         tmpFilesToRemove.push(docPath);
 
+        // Procesar documento (sharp) y OCR
         const processedDocPath = path.join(path.dirname(docPath), `proc_${uuidv4()}.png`);
         await procesarDocumento(docPath, processedDocPath);
         tmpFilesToRemove.push(processedDocPath);
 
-        // ----------------------
-        // OCR
-        // ----------------------
-        const ocrTextCrudo = (await realizarOCR(processedDocPath)) || "Texto no legible";
-        ocrText = limpiarTextoOCR(ocrTextCrudo);
-        const identificadorObj = extraerIdentificadorDesdeOCR(ocrText) || null;
+        const ocrTextCrudo = await realizarOCR(processedDocPath);
+        const ocrText = limpiarTextoOCR(ocrTextCrudo || '');
+        const identificadorObj = extraerIdentificadorDesdeOCR(ocrText);
         const identificador = identificadorObj ? identificadorObj.valor : "DESCONOCIDO";
 
+        // Detectar tipo documento
         const textoMinus = ocrText.toLowerCase();
-        if (textoMinus.includes("dui") || textoMinus.includes("documento") || textoMinus.includes("nacimiento") || textoMinus.match(/\b\d{8}-\d\b/)) {
-            tipoDocumentoDetectado = "DUI";
-        } else if (textoMinus.includes("pasaporte") || textoMinus.includes("passport")) {
-            tipoDocumentoDetectado = "Pasaporte";
-        } else {
+        let tipoDocumentoDetectado = "DESCONOCIDO";
+        if (textoMinus.includes("dui") || textoMinus.includes("documento") || textoMinus.match(/\b\d{8}-\d\b/)) tipoDocumentoDetectado = "DUI";
+        else if (textoMinus.includes("pasaporte") || textoMinus.includes("passport")) tipoDocumentoDetectado = "Pasaporte";
+        else {
             tmpFilesToRemove.forEach(p => safeUnlink(p));
             return res.json({ exito: false, mensaje: "El archivo subido no parece un documento oficial (DUI o pasaporte).", tipo_documento: "Foto no válida", vista_previa: `/uploads/${path.basename(docPath)}` });
         }
 
-        // ----------------------
-        // Comparación facial
-        // ----------------------
-        const rostroDocBuffer = await extraerRostroDocumento(processedDocPath);
-        let encryptedSelfies = null;
+        // Extraer rostro del documento
+        let rostroDocBuffer;
+        try {
+            rostroDocBuffer = await extraerRostroDocumento(processedDocPath);
+        } catch (err) {
+            console.error("Error extraer rostro del documento:", err.message);
+            rostroDocBuffer = null;
+        }
 
-        if (req.files.video?.[0]) {
+        //  Procesar video: extraer frames, calcular liveness, comparar rostro
+        let rostroCoincide = false;
+        let similarityScore = null;
+        let encryptedSelfies = null;
+        let livenessResult = { score: 0, live: false };
+
+        if (req.files?.video?.[0]) {
             const videoPath = req.files.video[0].path;
             tmpFilesToRemove.push(videoPath);
-            try {
-                const frameBuf = await extraerFrameVideo(videoPath);
 
-                if (rekognitionClient) {
+            // Evaluar liveness (passive) con frames
+            try {
+                // usar la función evaluarLiveness (que internamente usa extractFrames)
+                livenessResult = await evaluarLiveness(videoPath);
+            } catch (err) {
+                console.warn("evaluarLiveness fallo:", err.message);
+                livenessResult = { score: 0, live: false };
+            }
+
+            // Extraer frame representativo y comparar con rostroDocBuffer mediante Rekognition
+            try {
+                const frameBuf = await extraerFrameVideo(videoPath); // tu helper devuelve Buffer
+                if (rekognitionClient && rostroDocBuffer) {
+                    const similarityThreshold = Number(process.env.SIMILARITY_THRESHOLD || 80); // Rekognition espera porcentaje (0-100)
                     const compareCmd = new CompareFacesCommand({
                         SourceImage: { Bytes: frameBuf },
                         TargetImage: { Bytes: rostroDocBuffer },
-                        SimilarityThreshold: Number(process.env.SIMILARITY_THRESHOLD || 80)
+                        SimilarityThreshold: similarityThreshold
                     });
                     const compareRes = await rekognitionClient.send(compareCmd);
                     if (compareRes.FaceMatches && compareRes.FaceMatches.length > 0) {
                         rostroCoincide = true;
-                        similarityScore = compareRes.FaceMatches[0].Similarity || null;
+                        similarityScore = compareRes.FaceMatches[0].Similarity || 0;
                     } else {
                         rostroCoincide = false;
                         similarityScore = 0;
                     }
                 } else {
-                    console.warn('AWS Rekognition no configurado; se omite comparación facial');
+                    console.warn("Rekognition no configurado o rostroDocBuffer no disponible; omitiendo comparación facial.");
                 }
 
+                // Cifrar video si KEY existe (guardado seguro)
                 if (KEY) {
-                    const videoBuffer = fs.readFileSync(videoPath);
-                    const enc = encryptBuffer(videoBuffer);
-                    encryptedSelfies = [{ data: enc.data, iv: enc.iv }];
+                    try {
+                        const videoBuffer = fs.readFileSync(videoPath);
+                        const enc = encryptBuffer(videoBuffer);
+                        encryptedSelfies = [{ data: enc.data, iv: enc.iv }];
+                    } catch (err) {
+                        console.warn("Error cifrando video:", err.message);
+                        encryptedSelfies = null;
+                    }
                 }
             } catch (err) {
-                console.error('Error comparación facial:', err);
+                console.error("Error procesando video para comparación facial:", err.message);
             }
+        } else {
+            // si no hay video, permitir fallback a selfie-only (si guardaste una selfie en otro endpoint)
+            if (!rostroDocBuffer) console.warn("No hay video ni rostro extraído — verificación limitada.");
         }
 
-        // ----------------------
-        // Edad
-        // ----------------------
+        //  Edad
         let edad_valida = 1;
-        if (userRes.rows[0].fechanacimiento) {
-            const birthDate = new Date(userRes.rows[0].fechanacimiento);
-            const ageDiff = Date.now() - birthDate.getTime();
-            const ageDate = new Date(ageDiff);
-            const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+        if (usuario.fechanacimiento) {
+            const birthDate = new Date(usuario.fechanacimiento);
+            const age = Math.abs(new Date(Date.now() - birthDate.getTime()).getUTCFullYear() - 1970);
             if (age < 18) edad_valida = 0;
         }
 
-        // ----------------------
-        // Estados
-        // ----------------------
-        const livenessStatus = req.body.liveness ? 1 : 0;
-        const ocrMatchStatus = identificador !== "DESCONOCIDO" ? 1 : 0;
-
+        //  SHAP 
         const datosSHAP = {
             similarityScore: similarityScore || 0,
-            liveness: livenessStatus,
+            liveness: livenessResult.score || 0,
             tipoDocumentoDetectado,
-            OCR_match: ocrMatchStatus,
+            OCR_match: identificador !== null,
             edad_valida
         };
-
         let shapResultado = null;
+        try { shapResultado = await obtenerSHAP(datosSHAP); } catch (err) { console.error("Error obteniendo SHAP:", err.message); shapResultado = { error: err.message || "Error SHAP" }; }
+
+        //  Registrar intento en Redis
         try {
-            shapResultado = await obtenerSHAP(datosSHAP);
+            const nuevosIntentos = await redisClient.incr(key);
+            if (nuevosIntentos === 1) await redisClient.expire(key, EXPIRACION_INTENTOS);
         } catch (err) {
-            console.error("Error obteniendo SHAP:", err);
-            shapResultado = { error: err.message || "Error al calcular SHAP" };
+            console.warn("No se pudo incrementar intentos en Redis:", err.message);
         }
 
-        // ----------------------
-        // Registrar intento
-        // ----------------------
-        const nuevosIntentos = await redisClient.incr(key);
-        if (nuevosIntentos === 1) await redisClient.expire(key, EXPIRACION_INTENTOS);
+        //  Resultado general (regla compuesta: rostroCoincide && liveness)
+        const resultado_general = (rostroCoincide && livenessResult.live) ? "APROBADO" : "RECHAZADO";
 
-        // ----------------------
-        // Guardar verificación
-        // ----------------------
-        const resultado_general = rostroCoincide ? "APROBADO" : "RECHAZADO";
+        let verificationId = null;
+
+        //  Guardar verificación en DB
         verificationId = await guardarVerificacion({
-            user_id: userId, // <-- ya es entero seguro
+            user_id: userId,
             ocrText,
             similarityScore,
             match_result: rostroCoincide,
-            liveness: livenessStatus === 1,
+            liveness: !!livenessResult.live,
             edad_valida: edad_valida === 1,
             documento_path: docPath,
             selfie_paths: encryptedSelfies,
             ip: req.ip || req.headers['x-forwarded-for'] || null,
             dispositivo: { ua: req.get("User-Agent") || null },
-            acciones: { shap: shapResultado },
+            acciones: { shap: shapResultado, liveness: livenessResult },
             resultado_general,
             notificado: correo_usuario ? true : false
         });
 
-        // ----------------------
-        // Notificaciones
-        // ----------------------
-        if (rostroCoincide && correo_usuario) {
-            await enviarCorreoNotificacion(correo_usuario, "Verificación Exitosa", `<p>Hola ${nombre_usuario},</p><p>Tu verificación fue <strong>aprobada</strong>. Similitud: ${similarityScore?.toFixed(2)}%</p>`);
-        } else if (!rostroCoincide && correo_usuario) {
-            await enviarCorreoNotificacion(correo_usuario, "Verificación Fallida", `<p>Hola ${nombre_usuario},</p><p>La verificación <strong>no coincidió</strong>.</p>`);
-        }
+        //  Notificaciones por correo
+        try {
+            if (correo_usuario) {
+                if (resultado_general === "APROBADO") {
+                    await enviarCorreoNotificacion(correo_usuario, "Verificación Exitosa", `<p>Hola ${nombre_usuario},</p><p>Tu verificación fue <strong>aprobada</strong>. Similitud: ${similarityScore?.toFixed?.(2) ?? similarityScore}%</p>`);
+                } else {
+                    await enviarCorreoNotificacion(correo_usuario, "Verificación Fallida", `<p>Hola ${nombre_usuario},</p><p>La verificación no coincidió.</p>`);
+                }
+            }
+            // alerta interna si baja similitud
+            if (similarityScore !== null && similarityScore < 50 && process.env.FROM_EMAIL) {
+                await enviarCorreoNotificacion(process.env.FROM_EMAIL, "Revisión Manual Requerida", `<p>Usuario ${correo_usuario} requiere revisión manual. ID: ${verificationId}</p>`);
+            }
+        } catch (err) { console.warn("Error enviando correo:", err.message); }
 
-        if (similarityScore !== null && similarityScore < 50 && process.env.FROM_EMAIL) {
-            await enviarCorreoNotificacion(process.env.FROM_EMAIL, "Revisión Manual Requerida", `<p>Usuario ${correo_usuario} requiere revisión manual. ID: ${verificationId}</p>`);
-        }
-
-        // ----------------------
-        // Respuesta
-        // ----------------------
+        //  Responder
         return res.json({
-            exito: rostroCoincide,
-            mensaje: rostroCoincide ? `Verificación exitosa (Similitud: ${similarityScore?.toFixed(2)}%)` : "Rostro no coincide con el documento",
+            exito: resultado_general === "APROBADO",
+            mensaje: resultado_general === "APROBADO" ? `Verificación aprobada (Similitud: ${similarityScore ?? 0}%)` : "Verificación rechazada",
             id_verificacion: verificationId,
             match: rostroCoincide,
             score: similarityScore,
             ocr: ocrText,
             tipo_documento: tipoDocumentoDetectado,
             identificador,
-            shap_model_output: shapResultado
+            shap_model_output: shapResultado,
+            liveness: livenessResult
         });
 
     } catch (err) {
         console.error("Error en /verificar-identidad:", err);
-        return res.status(500).json({ exito: false, mensaje: "Error en el servidor durante la verificación" });
+        return res.status(500).json({ exito: false, mensaje: "Error en el servidor durante la verificación", detalle: err.message });
     } finally {
-        tmpFilesToRemove.forEach(p => safeUnlink(p));
+        // limpiar archivos temporales
+        try { tmpFilesToRemove.forEach(p => safeUnlink(p)); } catch (e) { /* ignorar */ }
     }
 });
-
 
 // ERROR HANDLER (global)
 app.use((err, req, res, next) => {

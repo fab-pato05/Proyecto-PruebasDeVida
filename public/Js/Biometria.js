@@ -310,8 +310,6 @@ async function enviarVerificacion(videoBlob) {
     mostrarMensajeUsuario("Error al enviar la verificación", "error");
   }
 }
-
-
 //  BOTON SUBMIT
 submitBtn.addEventListener("click", async e=>{
   e.preventDefault();
