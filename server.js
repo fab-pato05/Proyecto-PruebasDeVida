@@ -1,4 +1,3 @@
-// IMPORTS 
 import express from "express";
 import multer from "multer";
 import path from "path";
@@ -76,11 +75,10 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
 app.use("/Js", express.static(path.join(process.cwd(), "public/Js")));
 app.use("/js", express.static(path.join(process.cwd(), "Views/Js")));
 app.use("/img", express.static(path.join(process.cwd(), "public/img")));
-app.use("/img", express.static(path.join(process.cwd(), "Views/img")));
 app.use("/css", express.static(path.join(process.cwd(), "public/css")));
-app.use("/css", express.static(path.join(process.cwd(), "Views/css")));
 app.use("/models", express.static(path.join(process.cwd(), "models")));
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+app.use("/uploads/biometria", express.static(path.join(process.cwd(), "uploads/biometria")));
+
 
 //  ENCRYPTION AES-256 
 const ALGORITHM = "aes-256-cbc";
@@ -163,16 +161,52 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // MULTER BIOMETRÍA
+// Crear directorio al iniciar el servidor
+const biometriaDir = path.resolve(__dirname, "uploads", "biometria");
+try {
+    if (!fs.existsSync(biometriaDir)) {
+        fs.mkdirSync(biometriaDir, { recursive: true, mode: 0o755 });
+        console.log("✅ Directorio biometria creado:", biometriaDir);
+    }
+} catch (err) {
+    console.error("❌ Error creando directorio biometria:", err);
+    process.exit(1);
+}
+
 const storageBiometria = multer.diskStorage({
     destination: (req, file, cb) => {
-        const dir = path.join(process.cwd(), "uploads/biometria");
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        cb(null, dir);
+        // Validar que el directorio exista y sea escribible
+        fs.access(biometriaDir, fs.constants.W_OK, (err) => {
+            if (err) {
+                console.error("❌ Directorio no escribible:", biometriaDir);
+                return cb(err, biometriaDir);
+            }
+            cb(null, biometriaDir);
+        });
     },
-    filename: (req, file, cb) => cb(null, `${Date.now()}-${uuidv4()}${path.extname(file.originalname)}`)
+    filename: (req, file, cb) => {
+        const uniqueName = `${Date.now()}-${uuidv4()}${path.extname(file.originalname)}`;
+        console.log("📁 Guardando archivo:", uniqueName, "en:", biometriaDir);
+        cb(null, uniqueName);
+    }
 });
-const uploadBiometria = multer({ storage: storageBiometria, limits: { fileSize: 10 * 1024 * 1024 } });
-
+const uploadBiometria = multer({
+    storage: storageBiometria,
+    limits: {
+        fileSize: 50 * 1024 * 1024, // 50MB para videos
+        files: 2, // máximo 2 archivos
+        fieldSize: 1024 * 1024 // 1MB para otros campos
+    },
+    fileFilter: (req, file, cb) => {
+        // Validar tipos de archivo
+        const allowedTypes = ['image/jpeg', 'image/png', 'video/mp4', 'video/webm'];
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Tipo de archivo no permitido'), false);
+        }
+    }
+});
 // NODEMAILER 
 let transporter = null;
 if (process.env.SMTP_HOST && process.env.SMTP_USER) {
@@ -184,7 +218,7 @@ if (process.env.SMTP_HOST && process.env.SMTP_USER) {
 // UTILIDADES 
 function safeUnlink(p) { if (p && fs.existsSync(p)) fs.unlinkSync(p); }
 function nowISO() { return new Date().toISOString(); }
-function limpiarTextoOCR(textoCrudo) { return textoCrudo.replace(/[|:;—]/g, ' ').replace(/[\[\]]/g, ' ').replace(/^[£A]/g, '').replace(/\s+/g, ' ').trim(); }
+function limpiarTextoOCR(textoCrudo) { return textoCrudo.replace(/[|:;—]/g, ' ').replace(/[[]]/g, ' ').replace(/^[£A]/g, '').replace(/\s+/g, ' ').trim(); }
 function extraerIdentificadorDesdeOCR(ocrText) {
     if (!ocrText) return null;
     const duiMatch = ocrText.match(/\b(\d{8}-\d)\b/);
@@ -381,10 +415,10 @@ app.post('/guardar-registerForm', async (req, res) => {
         if (!correo || !contrasena) return res.status(400).json({ ok: false, message: 'correo y contraseña son requeridos' });
         const hashedPassword = await bcrypt.hash(contrasena, 10);
         const query = `
-            INSERT INTO usuarios
-            (nombres, apellidos, sexo, correo, celular, fechanacimiento, tipodocumento, numerodocumento, contrasena)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id;
-        `;
+        INSERT INTO usuarios
+        (nombres, apellidos, sexo, correo, celular, fechanacimiento, tipodocumento, numerodocumento, contrasena)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id;
+    `;
         const values = [nombres, apellidos, sexo, correo, celular, fechanacimiento, tipodocumento, numeroDocumento, hashedPassword];
         const r = await pool.query(query, values);
         res.status(200).json({ ok: true, id: r.rows[0].id });
@@ -460,11 +494,11 @@ app.post('/guardar-cotizacionForm', async (req, res) => {
 
         const usuario = usuarioRes.rows[0];
         const insertQuery = `
-            INSERT INTO formulariocotizacion
-            (usuario_id, nombre, primerapellido, segundoapellido, celular, correo, monto_asegurar, cesion_beneficios, poliza)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-            RETURNING *;
-        `;
+        INSERT INTO formulariocotizacion
+        (usuario_id, nombre, primerapellido, segundoapellido, celular, correo, monto_asegurar, cesion_beneficios, poliza)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        RETURNING *;
+    `;
         const values = [id, usuario.nombres || '', usuario.apellidos || '', '', usuario.celular || '', usuario.correo || '', monto_asegurar, cesion_beneficios, poliza];
         const result = await pool.query(insertQuery, values);
 
@@ -473,12 +507,12 @@ app.post('/guardar-cotizacionForm', async (req, res) => {
             to: usuario.correo,
             subject: 'Cotización Registrada',
             html: `<h2>Hola ${usuario.nombres || ''},</h2>
-                <p>Tu cotización ha sido registrada correctamente:</p>
-                <ul>
-                    <li>Monto a asegurar: $${monto_asegurar}</li>
-                    <li>Cesión de beneficios: ${cesion_beneficios}</li>
-                    <li>Póliza: ${poliza}</li>
-                </ul>`
+          <p>Tu cotización ha sido registrada correctamente:</p>
+          <ul>
+            <li>Monto a asegurar: $${monto_asegurar}</li>
+            <li>Cesión de beneficios: ${cesion_beneficios}</li>
+            <li>Póliza: ${poliza}</li>
+          </ul>`
         });
 
         res.json({ ok: true, message: 'Cotización guardada y correo enviado (si configurado)', data: result.rows[0] });
@@ -509,214 +543,214 @@ app.post('/verificar-identidad',
     upload.fields([
         { name: 'doc', maxCount: 1 },
         { name: 'video', maxCount: 1 }
-]), 
-async (req, res) => {
-    const tmpFilesToRemove = [];
-    const MAX_INTENTOS = 5;
-    const EXPIRACION_INTENTOS = 86400; // 24h
-    
-    try {
-        //Validar user_id
-        let userId = req.body.user_id;
-        if (!userId || userId === "null") return res.status(400).json({ exito: false, mensaje: "ID de usuario inválido o no proporcionado" });
-        userId = parseInt(userId);
-        if (isNaN(userId)) return res.status(400).json({ exito: false, mensaje: "ID de usuario debe ser un número válido" });
+    ]),
+    async (req, res) => {
+        const tmpFilesToRemove = [];
+        const MAX_INTENTOS = 5;
+        const EXPIRACION_INTENTOS = 86400; // 24h
 
-        // Conectar Redis y controlar intentos
-        await conectarRedis();
-        const key = `INTENTOS:${userId}`;
-        let intentos = 0;
-        try { intentos = Number(await redisClient.get(key) || 0); } catch (e) { console.warn("Redis get error:", e.message); intentos = 0; }
-        if (intentos >= MAX_INTENTOS) return res.status(429).json({ exito: false, mensaje: `⚠️ Has alcanzado el máximo de ${MAX_INTENTOS} intentos en 24 horas.` });
-
-        //Obtener info usuario
-        const userRes = await pool.query("SELECT id, nombres, apellidos, correo, fechanacimiento FROM usuarios WHERE id = $1", [userId]);
-        if (userRes.rows.length === 0) return res.status(404).json({ exito: false, mensaje: "Usuario no encontrado" });
-        const usuario = userRes.rows[0];
-        const correo_usuario = usuario.correo || null;
-        const nombre_usuario = `${usuario.nombres || ''} ${usuario.apellidos || ''}`.trim();
-
-        // Validar archivo doc
-        if (!req.files?.doc?.[0]) return res.status(400).json({ exito: false, mensaje: 'Documento no enviado' });
-        const docFile = req.files.doc[0];
-        const docPath = docFile.path;
-        tmpFilesToRemove.push(docPath);
-
-        // Procesar documento (sharp) y OCR
-        const processedDocPath = path.join(path.dirname(docPath), `proc_${uuidv4()}.png`);
-        await procesarDocumento(docPath, processedDocPath);
-        tmpFilesToRemove.push(processedDocPath);
-
-        const ocrTextCrudo = await realizarOCR(processedDocPath);
-        const ocrText = limpiarTextoOCR(ocrTextCrudo || '');
-        const identificadorObj = extraerIdentificadorDesdeOCR(ocrText);
-        const identificador = identificadorObj ? identificadorObj.valor : "DESCONOCIDO";
-
-        // Detectar tipo documento
-        const textoMinus = ocrText.toLowerCase();
-        let tipoDocumentoDetectado = "DESCONOCIDO";
-        if (textoMinus.includes("dui") || textoMinus.includes("documento") || textoMinus.match(/\b\d{8}-\d\b/)) tipoDocumentoDetectado = "DUI";
-        else if (textoMinus.includes("pasaporte") || textoMinus.includes("passport")) tipoDocumentoDetectado = "Pasaporte";
-        else {
-            tmpFilesToRemove.forEach(p => safeUnlink(p));
-            return res.json({ exito: false, mensaje: "El archivo subido no parece un documento oficial (DUI o pasaporte).", tipo_documento: "Foto no válida", vista_previa: `/uploads/${path.basename(docPath)}` });
-        }
-
-        // Extraer rostro del documento
-        let rostroDocBuffer;
         try {
-            rostroDocBuffer = await extraerRostroDocumento(processedDocPath);
-        } catch (err) {
-            console.error("Error extraer rostro del documento:", err.message);
-            rostroDocBuffer = null;
-        }
+            //Validar user_id
+            let userId = req.body.user_id;
+            if (!userId || userId === "null") return res.status(400).json({ exito: false, mensaje: "ID de usuario inválido o no proporcionado" });
+            userId = parseInt(userId);
+            if (isNaN(userId)) return res.status(400).json({ exito: false, mensaje: "ID de usuario debe ser un número válido" });
 
-        //  Procesar video: extraer frames, calcular liveness, comparar rostro
-        let rostroCoincide = false;
-        let similarityScore = null;
-        let encryptedSelfies = null;
-        let livenessResult = { score: 0, live: false };
+            // Conectar Redis y controlar intentos
+            await conectarRedis();
+            const key = `INTENTOS:${userId}`;
+            let intentos = 0;
+            try { intentos = Number(await redisClient.get(key) || 0); } catch (e) { console.warn("Redis get error:", e.message); intentos = 0; }
+            if (intentos >= MAX_INTENTOS) return res.status(429).json({ exito: false, mensaje: `⚠️ Has alcanzado el máximo de ${MAX_INTENTOS} intentos en 24 horas.` });
 
-        if (req.files?.video?.[0]) {
-            const videoPath = req.files.video[0].path;
-            tmpFilesToRemove.push(videoPath);
+            //Obtener info usuario
+            const userRes = await pool.query("SELECT id, nombres, apellidos, correo, fechanacimiento FROM usuarios WHERE id = $1", [userId]);
+            if (userRes.rows.length === 0) return res.status(404).json({ exito: false, mensaje: "Usuario no encontrado" });
+            const usuario = userRes.rows[0];
+            const correo_usuario = usuario.correo || null;
+            const nombre_usuario = `${usuario.nombres || ''} ${usuario.apellidos || ''}`.trim();
 
-            // Evaluar liveness (passive) con frames
-            try {
-                // usar la función evaluarLiveness (que internamente usa extractFrames)
-                livenessResult = await evaluarLiveness(videoPath);
-            } catch (err) {
-                console.warn("evaluarLiveness fallo:", err.message);
-                livenessResult = { score: 0, live: false };
+            // Validar archivo doc
+            if (!req.files?.doc?.[0]) return res.status(400).json({ exito: false, mensaje: 'Documento no enviado' });
+            const docFile = req.files.doc[0];
+            const docPath = docFile.path;
+            tmpFilesToRemove.push(docPath);
+
+            // Procesar documento (sharp) y OCR
+            const processedDocPath = path.join(path.dirname(docPath), `proc_${uuidv4()}.png`);
+            await procesarDocumento(docPath, processedDocPath);
+            tmpFilesToRemove.push(processedDocPath);
+
+            const ocrTextCrudo = await realizarOCR(processedDocPath);
+            const ocrText = limpiarTextoOCR(ocrTextCrudo || '');
+            const identificadorObj = extraerIdentificadorDesdeOCR(ocrText);
+            const identificador = identificadorObj ? identificadorObj.valor : "DESCONOCIDO";
+
+            // Detectar tipo documento
+            const textoMinus = ocrText.toLowerCase();
+            let tipoDocumentoDetectado = "DESCONOCIDO";
+            if (textoMinus.includes("dui") || textoMinus.includes("documento") || textoMinus.match(/\b\d{8}-\d\b/)) tipoDocumentoDetectado = "DUI";
+            else if (textoMinus.includes("pasaporte") || textoMinus.includes("passport")) tipoDocumentoDetectado = "Pasaporte";
+            else {
+                tmpFilesToRemove.forEach(p => safeUnlink(p));
+                return res.json({ exito: false, mensaje: "El archivo subido no parece un documento oficial (DUI o pasaporte).", tipo_documento: "Foto no válida", vista_previa: `/uploads/${path.basename(docPath)}` });
             }
 
-            // Extraer frame representativo y comparar con rostroDocBuffer mediante Rekognition
+            // Extraer rostro del documento
+            let rostroDocBuffer;
             try {
-                const frameBuf = await extraerFrameVideo(videoPath); // tu helper devuelve Buffer
-                if (rekognitionClient && rostroDocBuffer) {
-                    const similarityThreshold = Number(process.env.SIMILARITY_THRESHOLD || 80); // Rekognition espera porcentaje (0-100)
-                    const compareCmd = new CompareFacesCommand({
-                        SourceImage: { Bytes: frameBuf },
-                        TargetImage: { Bytes: rostroDocBuffer },
-                        SimilarityThreshold: similarityThreshold
-                    });
-                    const compareRes = await rekognitionClient.send(compareCmd);
-                    if (compareRes.FaceMatches && compareRes.FaceMatches.length > 0) {
-                        rostroCoincide = true;
-                        similarityScore = compareRes.FaceMatches[0].Similarity || 0;
+                rostroDocBuffer = await extraerRostroDocumento(processedDocPath);
+            } catch (err) {
+                console.error("Error extraer rostro del documento:", err.message);
+                rostroDocBuffer = null;
+            }
+
+            //  Procesar video: extraer frames, calcular liveness, comparar rostro
+            let rostroCoincide = false;
+            let similarityScore = null;
+            let encryptedSelfies = null;
+            let livenessResult = { score: 0, live: false };
+
+            if (req.files?.video?.[0]) {
+                const videoPath = req.files.video[0].path;
+                tmpFilesToRemove.push(videoPath);
+
+                // Evaluar liveness (passive) con frames
+                try {
+                    // usar la función evaluarLiveness (que internamente usa extractFrames)
+                    livenessResult = await evaluarLiveness(videoPath);
+                } catch (err) {
+                    console.warn("evaluarLiveness fallo:", err.message);
+                    livenessResult = { score: 0, live: false };
+                }
+
+                // Extraer frame representativo y comparar con rostroDocBuffer mediante Rekognition
+                try {
+                    const frameBuf = await extraerFrameVideo(videoPath); // tu helper devuelve Buffer
+                    if (rekognitionClient && rostroDocBuffer) {
+                        const similarityThreshold = Number(process.env.SIMILARITY_THRESHOLD || 80); // Rekognition espera porcentaje (0-100)
+                        const compareCmd = new CompareFacesCommand({
+                            SourceImage: { Bytes: frameBuf },
+                            TargetImage: { Bytes: rostroDocBuffer },
+                            SimilarityThreshold: similarityThreshold
+                        });
+                        const compareRes = await rekognitionClient.send(compareCmd);
+                        if (compareRes.FaceMatches && compareRes.FaceMatches.length > 0) {
+                            rostroCoincide = true;
+                            similarityScore = compareRes.FaceMatches[0].Similarity || 0;
+                        } else {
+                            rostroCoincide = false;
+                            similarityScore = 0;
+                        }
                     } else {
-                        rostroCoincide = false;
-                        similarityScore = 0;
+                        console.warn("Rekognition no configurado o rostroDocBuffer no disponible; omitiendo comparación facial.");
                     }
-                } else {
-                    console.warn("Rekognition no configurado o rostroDocBuffer no disponible; omitiendo comparación facial.");
-                }
 
-                // Cifrar video si KEY existe (guardado seguro)
-                if (KEY) {
-                    try {
-                        const videoBuffer = fs.readFileSync(videoPath);
-                        const enc = encryptBuffer(videoBuffer);
-                        encryptedSelfies = [{ data: enc.data, iv: enc.iv }];
-                    } catch (err) {
-                        console.warn("Error cifrando video:", err.message);
-                        encryptedSelfies = null;
+                    // Cifrar video si KEY existe (guardado seguro)
+                    if (KEY) {
+                        try {
+                            const videoBuffer = fs.readFileSync(videoPath);
+                            const enc = encryptBuffer(videoBuffer);
+                            encryptedSelfies = [{ data: enc.data, iv: enc.iv }];
+                        } catch (err) {
+                            console.warn("Error cifrando video:", err.message);
+                            encryptedSelfies = null;
+                        }
                     }
+                } catch (err) {
+                    console.error("Error procesando video para comparación facial:", err.message);
                 }
+            } else {
+                // si no hay video, permitir fallback a selfie-only (si guardaste una selfie en otro endpoint)
+                if (!rostroDocBuffer) console.warn("No hay video ni rostro extraído — verificación limitada.");
+            }
+
+            //  Edad
+            let edad_valida = 1;
+            if (usuario.fechanacimiento) {
+                const birthDate = new Date(usuario.fechanacimiento);
+                const age = Math.abs(new Date(Date.now() - birthDate.getTime()).getUTCFullYear() - 1970);
+                if (age < 18) edad_valida = 0;
+            }
+
+            //  SHAP 
+            const datosSHAP = {
+                similarityScore: similarityScore || 0,
+                liveness: livenessResult.score || 0,
+                tipoDocumentoDetectado,
+                OCR_match: identificador !== null,
+                edad_valida
+            };
+            let shapResultado = null;
+            try { shapResultado = await obtenerSHAP(datosSHAP); } catch (err) { console.error("Error obteniendo SHAP:", err.message); shapResultado = { error: err.message || "Error SHAP" }; }
+
+            //  Registrar intento en Redis
+            try {
+                const nuevosIntentos = await redisClient.incr(key);
+                if (nuevosIntentos === 1) await redisClient.expire(key, EXPIRACION_INTENTOS);
             } catch (err) {
-                console.error("Error procesando video para comparación facial:", err.message);
+                console.warn("No se pudo incrementar intentos en Redis:", err.message);
             }
-        } else {
-            // si no hay video, permitir fallback a selfie-only (si guardaste una selfie en otro endpoint)
-            if (!rostroDocBuffer) console.warn("No hay video ni rostro extraído — verificación limitada.");
-        }
 
-        //  Edad
-        let edad_valida = 1;
-        if (usuario.fechanacimiento) {
-            const birthDate = new Date(usuario.fechanacimiento);
-            const age = Math.abs(new Date(Date.now() - birthDate.getTime()).getUTCFullYear() - 1970);
-            if (age < 18) edad_valida = 0;
-        }
+            //  Resultado general (regla compuesta: rostroCoincide && liveness)
+            const resultado_general = (rostroCoincide && livenessResult.live) ? "APROBADO" : "RECHAZADO";
 
-        //  SHAP 
-        const datosSHAP = {
-            similarityScore: similarityScore || 0,
-            liveness: livenessResult.score || 0,
-            tipoDocumentoDetectado,
-            OCR_match: identificador !== null,
-            edad_valida
-        };
-        let shapResultado = null;
-        try { shapResultado = await obtenerSHAP(datosSHAP); } catch (err) { console.error("Error obteniendo SHAP:", err.message); shapResultado = { error: err.message || "Error SHAP" }; }
+            let verificationId = null;
 
-        //  Registrar intento en Redis
-        try {
-            const nuevosIntentos = await redisClient.incr(key);
-            if (nuevosIntentos === 1) await redisClient.expire(key, EXPIRACION_INTENTOS);
-        } catch (err) {
-            console.warn("No se pudo incrementar intentos en Redis:", err.message);
-        }
+            //  Guardar verificación en DB
+            verificationId = await guardarVerificacion({
+                user_id: userId,
+                ocrText,
+                similarityScore,
+                match_result: rostroCoincide,
+                liveness: !!livenessResult.live,
+                edad_valida: edad_valida === 1,
+                documento_path: docPath,
+                selfie_paths: encryptedSelfies,
+                ip: req.ip || req.headers['x-forwarded-for'] || null,
+                dispositivo: { ua: req.get("User-Agent") || null },
+                acciones: { shap: shapResultado, liveness: livenessResult },
+                resultado_general,
+                notificado: correo_usuario ? true : false
+            });
 
-        //  Resultado general (regla compuesta: rostroCoincide && liveness)
-        const resultado_general = (rostroCoincide && livenessResult.live) ? "APROBADO" : "RECHAZADO";
-
-        let verificationId = null;
-
-        //  Guardar verificación en DB
-        verificationId = await guardarVerificacion({
-            user_id: userId,
-            ocrText,
-            similarityScore,
-            match_result: rostroCoincide,
-            liveness: !!livenessResult.live,
-            edad_valida: edad_valida === 1,
-            documento_path: docPath,
-            selfie_paths: encryptedSelfies,
-            ip: req.ip || req.headers['x-forwarded-for'] || null,
-            dispositivo: { ua: req.get("User-Agent") || null },
-            acciones: { shap: shapResultado, liveness: livenessResult },
-            resultado_general,
-            notificado: correo_usuario ? true : false
-        });
-
-        //  Notificaciones por correo
-        try {
-            if (correo_usuario) {
-                if (resultado_general === "APROBADO") {
-                    await enviarCorreoNotificacion(correo_usuario, "Verificación Exitosa", `<p>Hola ${nombre_usuario},</p><p>Tu verificación fue <strong>aprobada</strong>. Similitud: ${similarityScore?.toFixed?.(2) ?? similarityScore}%</p>`);
-                } else {
-                    await enviarCorreoNotificacion(correo_usuario, "Verificación Fallida", `<p>Hola ${nombre_usuario},</p><p>La verificación no coincidió.</p>`);
+            //  Notificaciones por correo
+            try {
+                if (correo_usuario) {
+                    if (resultado_general === "APROBADO") {
+                        await enviarCorreoNotificacion(correo_usuario, "Verificación Exitosa", `<p>Hola ${nombre_usuario},</p><p>Tu verificación fue <strong>aprobada</strong>. Similitud: ${similarityScore?.toFixed?.(2) ?? similarityScore}%</p>`);
+                    } else {
+                        await enviarCorreoNotificacion(correo_usuario, "Verificación Fallida", `<p>Hola ${nombre_usuario},</p><p>La verificación no coincidió.</p>`);
+                    }
                 }
-            }
-            // alerta interna si baja similitud
-            if (similarityScore !== null && similarityScore < 50 && process.env.FROM_EMAIL) {
-                await enviarCorreoNotificacion(process.env.FROM_EMAIL, "Revisión Manual Requerida", `<p>Usuario ${correo_usuario} requiere revisión manual. ID: ${verificationId}</p>`);
-            }
-        } catch (err) { console.warn("Error enviando correo:", err.message); }
+                // alerta interna si baja similitud
+                if (similarityScore !== null && similarityScore < 50 && process.env.FROM_EMAIL) {
+                    await enviarCorreoNotificacion(process.env.FROM_EMAIL, "Revisión Manual Requerida", `<p>Usuario ${correo_usuario} requiere revisión manual. ID: ${verificationId}</p>`);
+                }
+            } catch (err) { console.warn("Error enviando correo:", err.message); }
 
-        //  Responder
-        return res.json({
-            exito: resultado_general === "APROBADO",
-            mensaje: resultado_general === "APROBADO" ? `Verificación aprobada (Similitud: ${similarityScore ?? 0}%)` : "Verificación rechazada",
-            id_verificacion: verificationId,
-            match: rostroCoincide,
-            score: similarityScore,
-            ocr: ocrText,
-            tipo_documento: tipoDocumentoDetectado,
-            identificador,
-            shap_model_output: shapResultado,
-            liveness: livenessResult
-        });
+            //  Responder
+            return res.json({
+                exito: resultado_general === "APROBADO",
+                mensaje: resultado_general === "APROBADO" ? `Verificación aprobada (Similitud: ${similarityScore ?? 0}%)` : "Verificación rechazada",
+                id_verificacion: verificationId,
+                match: rostroCoincide,
+                score: similarityScore,
+                ocr: ocrText,
+                tipo_documento: tipoDocumentoDetectado,
+                identificador,
+                shap_model_output: shapResultado,
+                liveness: livenessResult
+            });
 
-    } catch (err) {
-        console.error("Error en /verificar-identidad:", err);
-        return res.status(500).json({ exito: false, mensaje: "Error en el servidor durante la verificación", detalle: err.message });
-    } finally {
-        // limpiar archivos temporales
-        try { tmpFilesToRemove.forEach(p => safeUnlink(p)); } catch (e) { /* ignorar */ }
-    }
-});
+        } catch (err) {
+            console.error("Error en /verificar-identidad:", err);
+            return res.status(500).json({ exito: false, mensaje: "Error en el servidor durante la verificación", detalle: err.message });
+        } finally {
+            // limpiar archivos temporales
+            try { tmpFilesToRemove.forEach(p => safeUnlink(p)); } catch (e) { /* ignorar */ }
+        }
+    });
 
 // ERROR HANDLER (global)
 app.use((err, req, res, next) => {
