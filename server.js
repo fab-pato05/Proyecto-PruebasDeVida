@@ -1,3 +1,4 @@
+
 // IMPORTS 
 import express from "express";
 import multer from "multer";
@@ -17,11 +18,7 @@ import nodemailer from "nodemailer";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
-import {
-    RekognitionClient,
-    CompareFacesCommand,
-    DetectFacesCommand
-} from "@aws-sdk/client-rekognition";
+import { RekognitionClient, CompareFacesCommand } from "@aws-sdk/client-rekognition";
 import { createWorker } from "tesseract.js";
 
 const { Pool } = pkg;
@@ -41,30 +38,13 @@ app.use(cors({
     allowedHeaders: ["Content-Type"]
 }));
 
-// CONFIGURACIÓN OCR (Tesseract)
-let ocrWorker = null;
-//  inicializarlo al iniciar el servidor
-async function initOcrWorker() {
-    console.log("Iniciando Worker de Tesseract...");
-    ocrWorker = createWorker();
-    try {
-        await ocrWorker.load();
-        await ocrWorker.loadLanguage("spa");
-        await ocrWorker.initialize("spa");
-        console.log("✅ Tesseract OCR Worker listo.");
-    } catch (err) {
-        console.error("❌ Error inicializando Tesseract OCR:", err);
-        ocrWorker = null; // Marcar como fallido
-    }
-}
-
 // SECURITY MIDDLEWARES 
 app.use(helmet({
     contentSecurityPolicy: {
         useDefaults: true,
         directives: {
             "script-src": ["'self'", "https://cdn.tailwindcss.com", "https://unpkg.com"],
-            "style-src": ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://unpkg.com"],
+            "style-src": ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
             "img-src": ["'self'", "data:", "blob:"]
         }
     }
@@ -80,8 +60,7 @@ app.use("/img", express.static(path.join(process.cwd(), "Views/img")));
 app.use("/css", express.static(path.join(process.cwd(), "public/css")));
 app.use("/css", express.static(path.join(process.cwd(), "Views/css")));
 app.use("/models", express.static(path.join(process.cwd(), "models")));
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")))
 //  ENCRYPTION AES-256 
 const ALGORITHM = "aes-256-cbc";
 const KEY = process.env.ENCRYPTION_KEY ? Buffer.from(process.env.ENCRYPTION_KEY, "hex") : null;
