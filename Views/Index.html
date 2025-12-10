@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Círculo Seguro</title>
-  <link rel="icon" href="/img/LOGO_CS.jpg" type="image/jpeg" sizes="32x32">  
+  <link rel="icon" href="/public/img/LOGO_CS.jpg" type="image/jpeg" sizes="32x32">  
 
   <!-- CSS local -->
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/public/css/style.css">
 
   <!-- Tailwind CDN (solo para desarrollo) -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -22,7 +22,7 @@
     <nav class="bg-white shadow-md">
       <div class="bg-gray-100 px-6 py-3 flex items-center justify-between">
         <div class="flex items-center">
-          <img src="/img/LOGO_CS.jpg" alt="Logo de Círculo Seguro" class="w-12 h-12 rounded-full mr-3">
+          <img src="/public/img/LOGO_CS.jpg" alt="Logo de Círculo Seguro" class="w-12 h-12 rounded-full mr-3">
           <h1 class="text-xl font-bold text-gray-800">Círculo Seguro</h1>
         </div>
         <button class="md:hidden text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded mobile-toggle-btn">
@@ -224,6 +224,7 @@
   </footer>
 
   <!-- Scripts -->
-  <script type="module" src="/Js/index.js"></script>>
+  <script type="module" src="/public/Js/index.js"></script>
+  <script>document.getElementById('year').textContent=new Date().getFullYear();</script>
 </body>
 </html>
