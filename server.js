@@ -33,8 +33,7 @@ const PORT = Number(process.env.PORT || 3000);
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(process.cwd(), "Views")));
-
+// CORS
 app.use(cors({
     origin: "*",
     methods: ["GET", "POST"],
@@ -73,12 +72,15 @@ app.set('trust proxy', 1);
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
 
 // STATIC FOLDERS 
-app.use("/Js", express.static(path.join(process.cwd(), "public/Js")));
+ap.use("/Js", express.static(path.join(process.cwd(), "public/Js")));
 app.use("/img", express.static(path.join(process.cwd(), "public/img")));
 app.use("/css", express.static(path.join(process.cwd(), "public/css")));
 app.use("/models", express.static(path.join(process.cwd(), "models")));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-
+// HTML ROUTES
+app.get("/", (req, res) => {
+    res.sendFile(path.join(process.cwd(), "Views/index.html"));
+});
 //  ENCRYPTION AES-256 
 const ALGORITHM = "aes-256-cbc";
 const KEY = process.env.ENCRYPTION_KEY ? Buffer.from(process.env.ENCRYPTION_KEY, "hex") : null;
