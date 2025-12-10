@@ -109,6 +109,28 @@ captureBtn.addEventListener("click", () => {
   habilitarEnvio();
 });
 
+// 🔽 Reduce una imagen Base64 a 800px de ancho y calidad 70%
+function reducirImagen(base64String, maxWidth = 800) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = function () {
+      const canvas = document.createElement("canvas");
+
+      const scale = maxWidth / img.width;
+      canvas.width = maxWidth;
+      canvas.height = img.height * scale;
+
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      // JPG 70% = MUCHÍSIMO más pequeño
+      const reducida = canvas.toDataURL("image/jpeg", 0.7);
+      resolve(reducida);
+    };
+    img.src = base64String;
+  });
+}
+
 // CARGA DUI 
 docInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
@@ -121,13 +143,21 @@ docInput.addEventListener("change", (e) => {
   }
 
   const reader = new FileReader();
-  reader.onload = () => {
-    docPreviewImg.src = reader.result;
+  reader.onload = async () => {
+    // 🔽 Reducir imagen antes de usarla
+    const imagenReducida = await reducirImagen(reader.result, 800);
+
+    // Mostrar preview
+    docPreviewImg.src = imagenReducida;
     docPreviewImg.parentElement.classList.remove("hidden");
-    sessionStorage.setItem("dui_imagen", reader.result);
+
+    // Guardar en sessionStorage SIN ERROR DE CUOTA
+    sessionStorage.setItem("dui_imagen", imagenReducida);
+
     documentoValido = true;
     habilitarEnvio();
   };
+
   reader.readAsDataURL(file);
 });
 
