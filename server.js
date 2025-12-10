@@ -1,3 +1,4 @@
+
 // IMPORTS 
 import express from "express";
 import multer from "multer";
@@ -17,11 +18,7 @@ import nodemailer from "nodemailer";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
-import {
-    RekognitionClient,
-    CompareFacesCommand,
-    DetectFacesCommand
-} from "@aws-sdk/client-rekognition";
+import { RekognitionClient, CompareFacesCommand } from "@aws-sdk/client-rekognition";
 import { createWorker } from "tesseract.js";
 
 const { Pool } = pkg;
@@ -33,29 +30,13 @@ const PORT = Number(process.env.PORT || 3000);
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
-// CORS
+app.use(express.static(path.join(process.cwd(), "Views")));
+
 app.use(cors({
     origin: "*",
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"]
 }));
-
-// CONFIGURACIÓN OCR (Tesseract)
-let ocrWorker = null;
-//  inicializarlo al iniciar el servidor
-async function initOcrWorker() {
-    console.log("Iniciando Worker de Tesseract...");
-    ocrWorker = createWorker();
-    try {
-        await ocrWorker.load();
-        await ocrWorker.loadLanguage("spa");
-        await ocrWorker.initialize("spa");
-        console.log("✅ Tesseract OCR Worker listo.");
-    } catch (err) {
-        console.error("❌ Error inicializando Tesseract OCR:", err);
-        ocrWorker = null; // Marcar como fallido
-    }
-}
 
 // SECURITY MIDDLEWARES 
 app.use(helmet({
@@ -63,7 +44,7 @@ app.use(helmet({
         useDefaults: true,
         directives: {
             "script-src": ["'self'", "https://cdn.tailwindcss.com", "https://unpkg.com"],
-            "style-src": ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://unpkg.com"],
+            "style-src": ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
             "img-src": ["'self'", "data:", "blob:"]
         }
     }
@@ -73,14 +54,13 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
 
 // STATIC FOLDERS 
 app.use("/Js", express.static(path.join(process.cwd(), "public/Js")));
+app.use("/js", express.static(path.join(process.cwd(), "Views/Js")));
 app.use("/img", express.static(path.join(process.cwd(), "public/img")));
+app.use("/img", express.static(path.join(process.cwd(), "Views/img")));
 app.use("/css", express.static(path.join(process.cwd(), "public/css")));
+app.use("/css", express.static(path.join(process.cwd(), "Views/css")));
 app.use("/models", express.static(path.join(process.cwd(), "models")));
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-// HTML ROUTES
-app.get("/", (req, res) => {
-    res.sendFile(path.join(process.cwd(), "Views/index.html"));
-});
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")))
 //  ENCRYPTION AES-256 
 const ALGORITHM = "aes-256-cbc";
 const KEY = process.env.ENCRYPTION_KEY ? Buffer.from(process.env.ENCRYPTION_KEY, "hex") : null;
